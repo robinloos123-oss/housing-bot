@@ -10,34 +10,36 @@ CHAT_ID = os.getenv("8713710491")
 
 URL = "https://www.pararius.nl/huurwoningen/rotterdam"
 
-def send_telegram(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {
-        "chat_id": CHAT_ID,
-        "text": message
-    }
-    requests.post(url, data=data)
-
 def test_scrape():
     print("Test scrape gestart...")
 
-    response = requests.get(URL)
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+
+    response = requests.get(URL, headers=headers)
     soup = BeautifulSoup(response.text, "html.parser")
 
-    listing = soup.find("section", class_="listing-search-item")
+    # DEBUG: print stuk van HTML
+    print("Pagina geladen, lengte:", len(response.text))
 
-    if not listing:
-        print("Geen listing gevonden")
-        return
+    listings = soup.find_all("a", href=True)
 
-    title = listing.find("a").text.strip()
-    link = "https://www.pararius.nl" + listing.find("a")["href"]
+    print("Aantal links gevonden:", len(listings))
 
-    message = f"TEST 🧪\n🏠 {title}\n{link}"
+    for link in listings:
+        href = link.get("href")
 
-    send_telegram(message)
+        if "/huurwoning/" in href:
+            full_link = "https://www.pararius.nl" + href
+            title = link.text.strip()
 
-    print("✅ Test bericht verstuurd!")
+            message = f"TEST 🧪\n🏠 {title}\n{full_link}"
+            send_telegram(message)
 
-# run test
+            print("✅ Werkt! Listing gevonden")
+            return
+
+    print("❌ Nog steeds geen listing gevonden")
+
 test_scrape()
