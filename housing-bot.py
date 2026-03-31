@@ -8,38 +8,160 @@ import os
 TELEGRAM_TOKEN = os.getenv("8443772760:AAG-Is4O6sl6e9lT-lqQkIs_OGh4uocIBPM")
 CHAT_ID = os.getenv("8713710491")
 
-URL = "https://www.pararius.nl/huurwoningen/rotterdam"
+BASE_URL = "https://www.pararius.nl"
+SEARCH_URL = "https://www.pararius.nl/huurwoningen/rotterdam"
 
-def test_scrape():
-    print("Test scrape gestart...")
+MAX_PRICE = 3000
 
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+ROOM_OPTIONS = ["3", "4"]
 
-    response = requests.get(URL, headers=headers)
-    soup = BeautifulSoup(response.text, "html.parser")
+AREAS = [
+    "blijdorp",
+    "centrum",
+    "coolhaven",
+    "delfshaven",
+    "noord",
+    "west"
+]
 
-    # DEBUG: print stuk van HTML
-    print("Pagina geladen, lengte:", len(response.text))
+BLOCK_WORDS = [
+    "garantsteller",
+    "niet geschikt voor delers",
+    "no sharing",
+    "working professional",
+]
 
-    listings = soup.find_all("a", href=True)
+ALLOW_WORDS = [
+    "student",
+    "students",
+    "woningdelers toegestaan",
+]
 
-    print("Aantal links gevonden:", len(listings))
+HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept-Language": "nl-NL,nl;q=0.9"
+}
 
-    for link in listings:
+# ===== SEEN STORAGE =====
+
+def load_seen():
+    try:
+        with open("seen.json", "r") as f:
+            return set(json.load(f))
+    except:
+        return set()
+
+def save_seen(seen):
+    with open("seen.json", "w") as f:
+        json.dump(list(seen), f)
+
+seen_links = load_seen()
+
+# ===== TELEGRAM =====
+
+def send_telegram(msg):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
+
+# ===== GET DESCRIPTION =====
+
+def get_description(url):
+    try:
+        res = requests.get(url, headers=HEADERS, timeout=10)
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        desc = soup.get_text().lower()  # robuust → hele pagina
+        return desc
+    except:
+        return ""
+
+# ===== MAIN SCRAPER =====
+
+def scrape():
+    results = []
+
+    res = requests.get(SEARCH_URL, headers=HEADERS)
+    soup = BeautifulSoup(res.text, "html.parser")
+
+    links = soup.find_all("a", href=True)
+
+    for link in links:
         href = link.get("href")
 
-        if "/huurwoning/" in href:
-            full_link = "https://www.pararius.nl" + href
-            title = link.text.strip()
+        if "/huurwoning/" not in href:
+            continue
 
-            message = f"TEST 🧪\n🏠 {title}\n{full_link}"
-            send_telegram(message)
+        full_link = BASE_URL + href
 
-            print("✅ Werkt! Listing gevonden")
-            return
+        if full_link in seen_links:
+            continue
 
-    print("❌ Nog steeds geen listing gevonden")
+        try:
+            # open detail pagina
+            description = get_description(full_link)
 
-test_scrape()
+            # ===== FILTERS =====
+
+            # prijs
+            price = None
+            for word in description.split():
+                if "€" in word:
+                    digits = ''.join(filter(str.isdigit, word))
+                    if digits:
+                        price = int(digits)
+                        break
+
+            if not price or price > MAX_PRICE:
+                continue
+
+            # kamers (simpel maar effectief)
+            if not any(r + " kamer" in description for r in ROOM_OPTIONS):
+                continue
+
+            # wijk
+            if not any(area in description for area in AREAS):
+                continue
+
+            # block
+            if any(word in description for word in BLOCK_WORDS):
+                continue
+
+            # allow
+            if not any(word in description for word in ALLOW_WORDS):
+                continue
+
+            title = link.text.strip() or "Woning"
+
+            seen_links.add(full_link)
+
+            results.append((title, full_link, price))
+
+            print("✔ MATCH:", title)
+
+            time.sleep(1)  # anti-block
+
+        except Exception as e:
+            print("skip:", e)
+            continue
+
+    return results
+
+# ===== LOOP =====
+
+print("Bot gestart...")
+
+while True:
+    try:
+        listings = scrape()
+
+        for title, link, price in listings:
+            msg = f"🏠 {title}\n💰 €{price}\n{link}"
+            send_telegram(msg)
+            print("Sent:", title)
+
+        save_seen(seen_links)
+
+    except Exception as e:
+        print("ERROR:", e)
+
+    time.sleep(60)
