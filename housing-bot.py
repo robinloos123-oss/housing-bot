@@ -8,7 +8,9 @@ import os
 TELEGRAM_TOKEN = os.getenv("8443772760:AAG-Is4O6sl6e9lT-lqQkIs_OGh4uocIBPM")
 CHAT_ID = os.getenv("8713710491")
 
-URL = "https://www.pararius.nl/huurwoningen/rotterdam"
+URL = ["https://www.pararius.nl/huurwoningen/rotterdam", 
+      "https://www.rentalrotterdam.nl",
+      "https://rivarentals.nl/aanbod"]
 
 MAX_PRICE = 3000
 
